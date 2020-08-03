@@ -1,0 +1,3 @@
+#!/usr/bin/bash
+
+/home/gean/Git/QTasks/qtasks edit $1 isok="V"

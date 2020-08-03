@@ -1,0 +1,117 @@
+#!/usr/bin/python3
+# -*- coding: UTF-8 -*-
+
+import sys
+import time
+import os
+from DBManager import DBManager
+from CronManager import CronManager
+
+db = DBManager()
+cron = CronManager()
+env = os.environ
+
+def qHelp():
+    print("Usage:\n\tqtasks [options] ...\n\n  options:\n\tadd/del/edit/list/find\n")
+    print("    add:\n\tCommand: qtasks add [content] [date] [isAbort]\n\t  content: Reminders text.\n\t  date: %Y-%m-%d %H:%M\n\t  isAbort: 1 is true,0 is false.\n")
+    print("    del:\n\tCommand: qtasks del [id] ...\n\t  id: is id\n\t  Can delete multiple.\n")
+    print("    edit:\n\tCommand: qtasks edit [id] [args] ...\n\t  id: is id\n\t  args: isOK=iii content=xxx or date=yyy or isAbort=zzz\n\t  isOK: X is not completed,V is completed.\n\t  Can edit multiple.\n")
+    print("    list:\n\tCommand: qtasks list\n\t  List all.\n")
+    print("    find:\n\tCommand: qtasks find [arg]\n\t  arg: isOK=iii id=nnn or content=xxx or date=yyy or isAbort=zzz\n")
+    print("\nUsage:\n\tqtasks-ok [id]\n\tMark Completed by id.\n")
+    exit(1)
+
+def checkIsOK(isOK):
+    if isOK != "X" and isOK != "V":
+        qHelp()
+
+def checkDate(date):
+    try:
+        time.strptime(date, "%Y-%m-%d %H:%M")
+    except:
+        qHelp()
+
+def checkIsAbort(isAbort):
+    if isAbort != "0" and isAbort != "1":
+        qHelp()
+
+def convertDate(time):
+    date = time.split(" ", 1)
+    month = date[0].split("-", 2)[1]
+    day = date[0].split("-", 2)[2]
+    hour = date[1].split(":", 1)[0]
+    minute = date[1].split(":", 1)[1]
+    return minute + " " + hour + " " + day + " " + month + " *"
+
+if len(sys.argv) < 2:
+    qHelp()
+
+if sys.argv[1] == "add":
+    if len(sys.argv) < 5:
+        qHelp()
+    else:
+        checkDate(sys.argv[3])
+        checkIsAbort(sys.argv[4])
+        ret = db.qAdd("X", sys.argv[2], sys.argv[3], sys.argv[4])
+        if ret == -1:
+            qHelp()
+        if sys.argv[4] == "1":
+            command = "export DBUS_SESSION_BUS_ADDRESS=" + env['DBUS_SESSION_BUS_ADDRESS'] + " && /usr/bin/notify-send " + sys.argv[2]
+            afterCommand = "/home/gean/Git/QTasks/qtasks-ok " + str(ret)
+            date = convertDate(sys.argv[3])
+            cron.addCron(command, date, str(ret), env['USER'])
+            cron.addCron(afterCommand, date, str(ret), env['USER'])
+elif sys.argv[1] == "del":
+    if len(sys.argv) < 3:
+        qHelp()
+    else:
+        for index in range(len(sys.argv)):
+            if index > 1:
+                ret = db.qDel(sys.argv[index])
+                if ret == -1:
+                    qHelp()
+                cron.deleteCron(sys.argv[index], env['USER'])
+        db.qList()
+elif sys.argv[1] == "edit":
+    if len(sys.argv) < 4:
+        qHelp()
+    else:
+        for index in range(len(sys.argv)):
+            if index > 2:
+                edit = sys.argv[index].split("=", 1)
+                if edit[0].lower() == "isok":
+                    checkIsOK(edit[1])
+                elif edit[0].lower() == "date":
+                    checkDate(edit[1])
+                elif edit[0].lower() == "isabort":
+                    checkIsAbort(edit[1])
+                ret = db.qEdit(sys.argv[2], edit[0], edit[1])
+                if ret == -1:
+                    qHelp()
+        cursor = db.getByID(sys.argv[2])
+        if len(cursor) == 0:
+            print("ERROR: this ID is not exist")
+            exit(1)
+        print("isOK\tID\tContent\t\t\t\t\tDate\t\t\tisAbort")
+        print(str(cursor[0][0]) + "\t" + str(cursor[0][1]) + "\t" + str(cursor[0][2]) + "\t\t\t\t\t" + str(cursor[0][3]) + "\t" + str(cursor[0][4]))
+        if str(cursor[0][4]) == "1" and str(cursor[0][0]) == "X":
+            cron.deleteCron(sys.argv[2], env['USER'])
+            command = "export DBUS_SESSION_BUS_ADDRESS=" + env['DBUS_SESSION_BUS_ADDRESS'] + " && /usr/bin/notify-send " + str(cursor[0][2])
+            afterCommand = "/home/gean/Git/QTasks/qtasks-ok " + sys.argv[2]
+            date = convertDate(str(cursor[0][3]))
+            cron.addCron(command, date, sys.argv[2], env['USER'])
+            cron.addCron(afterCommand, date, sys.argv[2], env['USER'])
+        else:
+            cron.deleteCron(sys.argv[2], env['USER'])
+elif sys.argv[1] == "list":
+    db.qList()
+elif sys.argv[1] == "find":
+    if len(sys.argv) < 3:
+        qHelp()
+    try:
+        find = sys.argv[2].split("=", 1)
+        db.qFind(find[0], find[1])
+    except:
+        qHelp()
+else:
+    qHelp()
